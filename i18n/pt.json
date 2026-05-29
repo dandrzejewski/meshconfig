@@ -28,6 +28,13 @@
         "livenode_status_msg": "Conecte-se a um nó, então baixe sua configuração.",
         "desired_title": "YAML desejado"
     },
+    "fleet": {
+        "toggle": "Modo frota (incrementar nomes automaticamente)",
+        "currentLabel": "Atual:",
+        "nextLabel": "Próximo:",
+        "advanced": "Modo frota: o próximo nó será {{short}} / {{long}}.",
+        "limitError": "Modo frota: \"{{name}}\" excede o limite de {{max}} caracteres para o nome {{kind}} do Meshtastic."
+    },
     "diff": {
         "title": "Diferença",
         "punchline": "Diferença atual",

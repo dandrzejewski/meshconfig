@@ -110,6 +110,21 @@
           </div>
         </div>
 
+        <!-- Fleet clone mode: auto-increments owner/owner_short after each successful upload -->
+        <div class="fleet-control">
+          <label class="fleet-control__toggle">
+            <input id="fleetToggle" type="checkbox" />
+            <span data-i18n="fleet.toggle">Fleet mode (auto-increment names)</span>
+          </label>
+          <div id="fleetStatus" class="fleet-control__status" hidden>
+            <span data-i18n="fleet.currentLabel">Current</span>
+            <strong id="fleetCurrent">—</strong>
+            <span class="fleet-control__arrow" aria-hidden="true">→</span>
+            <span data-i18n="fleet.nextLabel">Next</span>
+            <strong id="fleetNext">—</strong>
+          </div>
+        </div>
+
         <div class="workspace">
           <section class="editor-card">
             <div class="editor-card__header">

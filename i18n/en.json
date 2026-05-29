@@ -28,6 +28,13 @@
         "livenode_status_msg": "Connect to a node, then download its config.",
         "desired_title": "Desired YAML"
     },
+    "fleet": {
+        "toggle": "Fleet mode (auto-increment names)",
+        "currentLabel": "Current:",
+        "nextLabel": "Next:",
+        "advanced": "Fleet mode: next node will be {{short}} / {{long}}.",
+        "limitError": "Fleet mode: \"{{name}}\" exceeds the Meshtastic {{kind}} name limit of {{max}} characters."
+    },
     "diff": {
         "title": "Diff",
         "punchline": "Current diff",

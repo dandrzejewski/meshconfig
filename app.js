@@ -273,6 +273,12 @@ const FALLBACK_CONFIG_PRESETS = [
 ];
 const DEFAULT_PRESET_ID = "./configs/meshoregon.yaml";
 
+// Fleet clone mode. Meshtastic User.short_name is char[5] (4 usable bytes) and
+// long_name is char[40] (39 usable bytes); names that exceed these are rejected.
+const SHORT_NAME_MAX = 4;
+const LONG_NAME_MAX = 39;
+const FLEET_STORAGE_KEY = "meshconfig.fleet";
+
 const elements = {
   status: document.getElementById("status"),
   nodeSummary: document.getElementById("nodeSummary"),
@@ -286,6 +292,10 @@ const elements = {
   uploadBtn: document.getElementById("uploadBtn"),
   downloadLiveBtn: document.getElementById("downloadLiveBtn"),
   loadDesiredBtn: document.getElementById("loadDesiredBtn"),
+  fleetToggle: document.getElementById("fleetToggle"),
+  fleetStatus: document.getElementById("fleetStatus"),
+  fleetCurrent: document.getElementById("fleetCurrent"),
+  fleetNext: document.getElementById("fleetNext"),
   desiredFile: document.getElementById("desiredFile"),
   desiredPreset: document.getElementById("desiredPreset"),
   liveYaml: document.getElementById("liveYaml"),
@@ -864,6 +874,174 @@ function getEffectiveDesiredConfig({ updateEditor = false } = {}) {
     state.desiredConfig = desired;
   }
   return desired;
+}
+
+// --- Fleet clone mode -------------------------------------------------------
+
+// Translate with a guaranteed fallback. i18n loads asynchronously, so app logic
+// may run before translations are ready; fall back to English and fill vars.
+function fleetText(key, fallback, vars = {}) {
+  const translated = window.i18n?.t?.(key, vars);
+  if (translated && translated !== key) {
+    return translated;
+  }
+  return Object.keys(vars).reduce(
+    (str, k) => str.replace(new RegExp(`{{\\s*${k}\\s*}}`, "g"), vars[k]),
+    fallback,
+  );
+}
+
+// Increment the trailing number in a name, preserving zero-pad width and growing
+// it only on carry: "GEARS-01" -> "GEARS-02", "2809" -> "2810", "99" -> "100".
+// Returns { value, incremented }; incremented is false when there is no trailing
+// number, so the caller can leave the name unchanged and warn.
+function incrementName(name) {
+  // Unquoted numeric YAML values (e.g. `owner_short: 2801`) parse as Numbers;
+  // coerce so they increment too, and return a string for the re-dumped YAML.
+  if (typeof name === "number" && Number.isFinite(name)) {
+    name = String(name);
+  }
+  if (typeof name !== "string") {
+    return { value: name, incremented: false };
+  }
+  const match = name.match(/^(.*?)(\d+)(\D*)$/);
+  if (!match) {
+    return { value: name, incremented: false };
+  }
+  const [, prefix, digits, suffix] = match;
+  const next = String(Number(digits) + 1).padStart(digits.length, "0");
+  return { value: `${prefix}${next}${suffix}`, incremented: true };
+}
+
+// Hard block: throw if a name about to be written exceeds Meshtastic limits.
+function validateFleetNames(owner, ownerShort) {
+  const checks = [
+    { name: ownerShort, max: SHORT_NAME_MAX, kind: "short" },
+    { name: owner, max: LONG_NAME_MAX, kind: "long" },
+  ];
+  for (const { name, max, kind } of checks) {
+    const value = typeof name === "number" ? String(name) : name;
+    if (typeof value === "string" && value.length > max) {
+      throw new Error(
+        fleetText(
+          "fleet.limitError",
+          'Fleet mode: "{{name}}" exceeds the Meshtastic {{kind}} name limit of {{max}} characters.',
+          { name: value, kind, max },
+        ),
+      );
+    }
+  }
+}
+
+function fleetEnabled() {
+  return Boolean(elements.fleetToggle?.checked);
+}
+
+// Refresh the "Current -> Next" readout from the desired YAML in the editor.
+function renderFleetStatus() {
+  if (!elements.fleetStatus) {
+    return;
+  }
+  if (!fleetEnabled()) {
+    elements.fleetStatus.hidden = true;
+    return;
+  }
+  elements.fleetStatus.hidden = false;
+
+  let owner = "";
+  let ownerShort = "";
+  try {
+    const desired = applyLiveNamesToDesired(parseDesiredYaml());
+    owner = desired.owner ?? "";
+    ownerShort = desired.owner_short ?? "";
+  } catch (error) {
+    // Editor holds invalid YAML mid-edit; leave the readout blank.
+  }
+
+  const dash = "—";
+  const hasNames = Boolean(owner || ownerShort);
+  elements.fleetCurrent.textContent = hasNames
+    ? `${ownerShort || dash} / ${owner || dash}`
+    : dash;
+  elements.fleetNext.textContent = hasNames
+    ? `${incrementName(ownerShort).value || dash} / ${incrementName(owner).value || dash}`
+    : dash;
+}
+
+// After a successful upload, advance the desired names to the next node.
+function advanceFleetNames() {
+  const desired = getEffectiveDesiredConfig();
+  const nextShort = incrementName(desired.owner_short);
+  const nextLong = incrementName(desired.owner);
+
+  if (!nextShort.incremented && !nextLong.incremented) {
+    log("Fleet mode: no trailing number in owner names; nothing to increment.");
+    return;
+  }
+
+  desired.owner_short = nextShort.value;
+  desired.owner = nextLong.value;
+  setDesiredConfig(desired);
+  saveFleetState();
+  renderFleetStatus();
+  log(
+    fleetText("fleet.advanced", "Fleet mode: next node will be {{short}} / {{long}}.", {
+      short: desired.owner_short ?? "",
+      long: desired.owner ?? "",
+    }),
+  );
+}
+
+function saveFleetState() {
+  if (!fleetEnabled()) {
+    localStorage.removeItem(FLEET_STORAGE_KEY);
+    return;
+  }
+  try {
+    const desired = parseDesiredYaml();
+    localStorage.setItem(
+      FLEET_STORAGE_KEY,
+      JSON.stringify({
+        enabled: true,
+        owner: desired.owner ?? "",
+        owner_short: desired.owner_short ?? "",
+      }),
+    );
+  } catch (error) {
+    // Editor mid-edit/invalid; keep whatever was last persisted.
+  }
+}
+
+// Restore fleet mode on page load, resuming at the saved pending node. Saved
+// names take precedence over the preset so a reload does not reset the counter.
+function loadFleetState() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(FLEET_STORAGE_KEY) ?? "null");
+  } catch (error) {
+    saved = null;
+  }
+  if (!saved?.enabled || !elements.fleetToggle) {
+    return;
+  }
+  elements.fleetToggle.checked = true;
+
+  let desired = {};
+  try {
+    if (elements.desiredYaml.value.trim()) {
+      desired = parseDesiredYaml();
+    }
+  } catch (error) {
+    desired = {};
+  }
+  if (saved.owner) {
+    desired.owner = saved.owner;
+  }
+  if (saved.owner_short) {
+    desired.owner_short = saved.owner_short;
+  }
+  setDesiredConfig(desired);
+  renderFleetStatus();
 }
 
 function escapeHtml(value) {
@@ -1891,6 +2069,10 @@ if (window.location.protocol === "file:") {
     })
     .catch((error) => {
       log(`Default desired config not loaded: ${error?.message ?? error}`);
+    })
+    .finally(() => {
+      // Restore fleet mode after the preset loads so saved pending names win.
+      loadFleetState();
     });
 }
 
@@ -1918,7 +2100,14 @@ elements.uploadBtn.addEventListener("click", () =>
   withTask(async () => {
     scrollToPageBottom();
     compareLiveAndDesired();
+    if (fleetEnabled()) {
+      const desired = getEffectiveDesiredConfig({ updateEditor: true });
+      validateFleetNames(desired.owner, desired.owner_short); // hard block before write
+    }
     await uploadDesiredConfig();
+    if (fleetEnabled()) {
+      advanceFleetNames(); // only reached when upload succeeds
+    }
   }),
 );
 elements.downloadLiveBtn.addEventListener("click", () => {
@@ -1942,6 +2131,15 @@ elements.desiredYaml.addEventListener("input", () => {
   elements.desiredMeta.textContent = "Edited locally";
   setControls();
   scheduleCurrentDiffRefresh();
+  if (fleetEnabled()) {
+    renderFleetStatus();
+    saveFleetState();
+  }
+});
+elements.fleetToggle?.addEventListener("change", () => {
+  log(fleetEnabled() ? "Fleet mode on." : "Fleet mode off.");
+  saveFleetState();
+  renderFleetStatus();
 });
 elements.refreshDiffBtn.addEventListener("click", () => {
   refreshCurrentDiff();

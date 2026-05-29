@@ -638,3 +638,46 @@ h3 {
     grid-template-columns: 1fr;
   }
 }
+
+/* Fleet clone mode controls */
+.fleet-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  width: 100%;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.fleet-control__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.fleet-control__toggle input {
+  accent-color: var(--accent-2);
+}
+
+.fleet-control__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.fleet-control__status strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.fleet-control__arrow {
+  color: var(--muted);
+}
